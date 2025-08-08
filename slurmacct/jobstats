@@ -132,7 +132,7 @@ sacct $partitionselect -X -np -a -S $start_time -E $end_time -o $FORMAT -s $STAT
 BEGIN {
 	header = "JobID\tuser\tNcpus\tWallhrs\tNodes\tNgpus"
 	if (ENVIRON["ADDITIONAL_COLUMNS"] == "1") {
-		header = header "\tReqWallhrs"
+		header = header "\tReqWallhrs\tSubmit\tStarted"
 	}
 	print header
 }
@@ -180,7 +180,7 @@ BEGIN {
 	if (ENVIRON["ADDITIONAL_COLUMNS"] == "1") {
 		reqwall_min = $15
 		reqwall_hours = reqwall_min / 60;
-		printf("\t%.3f", reqwall_hours)
+		printf("\t%.3f\t%d\t%d", reqwall_hours, submit, start)
 	}
 
 	print("\n")
