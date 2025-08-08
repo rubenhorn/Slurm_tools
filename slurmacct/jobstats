@@ -12,7 +12,7 @@
 function usage()
 {
 	cat <<EOF
-Usage: $0 [-s Start_time -e End_time | -c | -w | -m monthyear] [-p partition(s)] [-r report-prefix] [-n] [-h]
+Usage: $0 [-s Start_time -e End_time | -c | -w | -m monthyear] [-p partition(s)] [-r report-prefix] [-n] [-a] [-h]
 where:
 	-s Start_time [last month]: Starting time of accounting period.
 	-e End_time [last month]: End time of accounting period.
@@ -22,6 +22,7 @@ where:
 	-p partition(s): Select only Slurm partion <partition>[,partition2,...]
 	-r: Report name prefix
 	-h: Print this help information
+	-a: Print additional columns such as the requested wall hours
 
 The Start_time and End_time values specify the date/time interval of
 job completion/termination (see "man sacct").
@@ -38,7 +39,7 @@ export partition=""
 export month="last"
 
 # Process options
-while getopts "p:u:g:s:e:r:m:cwhn" options; do
+while getopts "p:u:g:s:e:r:m:cwhna" options; do
 	case $options in
 		p )     export partition=$OPTARG
 			export partitionselect="--partition $OPTARG"
@@ -71,6 +72,9 @@ while getopts "p:u:g:s:e:r:m:cwhn" options; do
 			;;
 		r )     export REPORT_PREFIX="$OPTARG"
 			echo Copy report to $OPTARG
+			;;
+		a )	export ADDITIONAL_COLUMNS=1
+			echo "Including additional columns in output"
 			;;
 		h|? ) usage
 			exit 1;;
@@ -119,14 +123,18 @@ fi
 # Report time in seconds:
 export SLURM_TIME_FORMAT="%s"
 # Request job data
-export FORMAT="JobID,User,Group,Partition,AllocNodes,AllocCPUS,Submit,Eligible,Start,End,CPUTimeRAW,MaxRSS,AllocTRES,State"
+export FORMAT="JobID,User,Group,Partition,AllocNodes,AllocCPUS,Submit,Eligible,Start,End,CPUTimeRAW,MaxRSS,AllocTRES,State,TimelimitRaw"
 # Request job states: Cancelled, Completed, Failed, Timeout, Preempted, OUT_OF_MEMORY
 export STATE="ca,cd,f,to,pr,oom"
 
 # Get Slurm individual job accounting records using the "sacct" command
 sacct $partitionselect -X -np -a -S $start_time -E $end_time -o $FORMAT -s $STATE | awk -F"|" '
 BEGIN {
-	print "JobID\tuser\tNcpus\tWallhrs\tNodes\tNgpus"
+	header = "JobID\tuser\tNcpus\tWallhrs\tNodes\tNgpus"
+	if (ENVIRON["ADDITIONAL_COLUMNS"] == "1") {
+		header = header "\tReqWallhrs"
+	}
+	print header
 }
 {
 	# Parse input data
@@ -165,8 +173,17 @@ BEGIN {
 	# fudge the number of GPUs=1 for jobs in the sm3090 partition.
 	# if (ngpus == 0 && part == "sm3090") ngpus = 1
 
+
 	wallhours = wall/3600
-	printf("%d\t%s\t%d\t%.3f\t%d\t%d\n", JobID, user, total_ncpus, wallhours, nodect, ngpus)
+	printf("%d\t%s\t%d\t%.3f\t%d\t%d", JobID, user, total_ncpus, wallhours, nodect, ngpus)
+
+	if (ENVIRON["ADDITIONAL_COLUMNS"] == "1") {
+		reqwall_min = $15
+		reqwall_hours = reqwall_min / 60;
+		printf("\t%.3f", reqwall_hours)
+	}
+
+	print("\n")
 } ' > $REPORT
 
 echo Report generated to file $REPORT
