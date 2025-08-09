@@ -1,0 +1,68 @@
+#! /usr/bin/env python3
+
+"""Generates an anonymized dataset of Slurm jobs using the ./jobstats script."""
+
+import argparse
+from pathlib import Path
+import subprocess
+
+from matplotlib import pyplot as plt
+import pandas as pd
+
+def run_jobstats(month: str, partition: str) -> str:
+    """Generate report and return path of the file."""
+    jobstats_script = (Path(__file__).parent / "jobstats").absolute()
+    cmd = f"{jobstats_script} -a {('-p ' + partition) if partition else ''} -m {month} | grep -Eo /.*\\.csv\\$"
+    output = subprocess.check_output(f"sh -c '{cmd}'", shell=True).decode().strip()
+    return output
+
+def generate_dataset(month: str, partition: str, output: str) -> None:
+    report_path = run_jobstats(month, partition)
+
+    df = pd.read_csv(report_path, sep="\t", index_col=False)
+    df["JobID"] -= df["JobID"].min()
+    df["Submit"] -= df["Submit"].min()
+    df["Started"] -= df["Started"].min()
+    df.sort_values("JobID", inplace=True)
+    users = list(df["user"].unique())
+    df["user"] = df["user"].apply(lambda u: users.index(u))
+    df.columns = ["job_id", "user", "cpus", "wallhours_use", "nodes", "gpus", "wallhours_req", "ts_submit", "ts_start"]
+    print("Writing output to", output)
+    df.to_csv(output, index=False)
+
+def visualize_dataset(df, partition=None):
+    _, axes = plt.subplots(ncols=4, figsize=(8,2))
+    axes[0].hist(df["nodes"])
+    axes[1].hist(df["wallhours_req"])
+    axes[2].hist(df["wallhours_use"])
+    axes[3].hist(df["ts_start"] - df["ts_submit"])
+    for i in range(4):
+        axes[i].set_title(["Nodes", "Req. Time [h]", "Time [h]", "Delay [s]"][i])
+        axes[i].set_yscale("symlog")
+    if partition:
+        plt.gcf().suptitle("Partition: " + partition)
+    plt.tight_layout()
+    plt.show()
+
+def main() -> None:
+    arg_parser = argparse.ArgumentParser(description=__doc__)
+    arg_parser.add_argument("-m", "--month", default="july2025", help='Defaults to "july2025"')
+    arg_parser.add_argument("-p", "--partition", type=str, default=None, help='All if not provided')
+    arg_parser.add_argument("-o", "--output", default=(Path(__file__).parent / "output.csv").absolute(), help='Defaults to ./output.csv')
+    arg_parser.add_argument("-v", "--visualize", action="store_true")
+    args = arg_parser.parse_args()
+
+    if Path(args.output).is_file():
+        print("File", args.output, " exists. (Won't re-generate it.)")
+    else:
+        generate_dataset(args.month, args.partition, str(args.output))
+    df = pd.read_csv(args.output)
+    df.set_index("job_id", inplace=True)
+    print("Preview:")
+    print(df.head())
+    print("...")
+    if args.visualize:
+        visualize_dataset(df, args.partition)
+
+if __name__ == "__main__":
+    main()
