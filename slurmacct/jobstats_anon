@@ -26,12 +26,15 @@ def generate_dataset(month: str, partition: str, output: str) -> None:
     df.sort_values("JobID", inplace=True)
     users = list(df["user"].unique())
     df["user"] = df["user"].apply(lambda u: users.index(u))
-    df.columns = ["job_id", "user", "cpus", "wallhours_use", "nodes", "gpus", "wallhours_req", "ts_submit", "ts_start"]
+    df.columns = ["job_id", "user", "cpus", "wallhours_use", "nodes", "gpus", "wallhours_req", "ts_submit", "ts_start", "partition"]
     print("Writing output to", output)
     df.to_csv(output, index=False)
 
 def visualize_dataset(df, partition=None):
     _, axes = plt.subplots(ncols=4, figsize=(8,2))
+    if partition:
+        df = df[df["partition"] == partition]
+        plt.gcf().suptitle("Partition: " + partition)
     axes[0].hist(df["nodes"])
     axes[1].hist(df["wallhours_req"])
     axes[2].hist(df["wallhours_use"])
@@ -39,8 +42,6 @@ def visualize_dataset(df, partition=None):
     for i in range(4):
         axes[i].set_title(["Nodes", "Req. Time [h]", "Time [h]", "Delay [s]"][i])
         axes[i].set_yscale("symlog")
-    if partition:
-        plt.gcf().suptitle("Partition: " + partition)
     plt.tight_layout()
     plt.show()
 
