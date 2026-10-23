@@ -34,11 +34,14 @@ tools have been developed for management and monitoring of our cluster:
 
 14. Tools for managing [InfiniBand and Omni-Path](InfiniBand/) network fabrics.
 
+15. [Command completions](bash-completion/) for our Slurm tools.
+
 Slurm deployment HOWTO
 ----------------------
 
 Our [Slurm HOWTO guide](https://wiki.fysik.dtu.dk/niflheim/SLURM) for setting up a Slurm installation.
-It's based on RHEL 7/8 Linux (and clones), but much of the information should be relevant on other Linuxes as well.
+The guide is based on RHEL 8 Linux (and clones such as Rocky or Alma Linux),
+but much of the information should be relevant on other Linux distributions as well.
 
 Download
 --------

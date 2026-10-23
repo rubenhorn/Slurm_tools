@@ -11,7 +11,7 @@
 function usage()
 {
 	cat <<EOF
-Usage: slurmacct [-C|-T|-N] [-s Start_time -e End_time | -c | -y | -w | -m monthyear] [-p partition(s)] [-u username] [-g groupname] [-G] [-W workdir] [-r report-prefix] [-n] [-h]
+Usage: slurmacct [-C|-T|-N] [-s Start_time -e End_time | -c | -y | | -w | -m monthyear | -Y yyyy ] [-p partition(s)] [-u username] [-g groupname] [-G | -P ] [-W workdir] [-r report-prefix] [-n] [-h]
 where:
 	-C: Print CPU usage (Default option)
 	-T: Print Trackable resource (TRES) GPU usage in stead of CPU usage
@@ -22,10 +22,12 @@ where:
 	-y: Current year
 	-w: Last week
 	-m monthyear: Select month and year (like "november2019")
+	-Y yyyy: Select the entire year yyyy (like "2025")
 	-p partition(s): Select only Slurm partion <partition>[,partition2,...]
 	-u username: Print only user <username> 
 	-g groupname: Print only users in UNIX group <groupname>
 	-G: Print only groupwise summed accounting data
+	-P: Print only Parent group summed accounting data
 	-W directory: Print only jobs with this string in the job WorkDir
 	-r: Report name prefix
 	-n: No header information is printed (append to existing report)
@@ -40,17 +42,21 @@ EOF
 
 #####################################################################################
 
-# Report file prefix
+# Default report file prefix
 REPORT_PREFIX=/tmp/Slurm_report_acct_
+# The Slurm accounts file, see:
+# https://github.com/OleHolmNielsen/Slurm_tools/tree/master/slurmacct
+export PARENTFILE="/etc/slurm/accounts.conf"
+
 export partition=""
 export username=""
 export groupname=""
 export workdir=""
 export ALLGROUPS=0
-export reportby="users"
+export reportby="USERS"
 # Default: CPU accounting
 export TRES="cpus"
-# Alternative accounting types: CPUUSAGE, NODEUSAGE or TRES/GPU
+# Mutually exclusive accounting types: CPUUSAGE, NODEUSAGE or TRES/GPU
 export CPUUSAGE=0
 export NODEUSAGE=0
 export TRESGPU=0
@@ -63,12 +69,13 @@ export month="last"
 line="--------------------------------------------------------------------------------"
 
 # Process options
-while getopts "p:u:g:s:e:r:m:W:cywGCTNhn" options; do
+while getopts "p:u:g:s:e:r:m:W:Y:cywGPCTNhn" options; do
 	case $options in
 		p )     export partition=$OPTARG
 			echo " - Print only accounting in Slurm partition $OPTARG"
 			;;
-		u )     export username=$OPTARG
+		u )     # Keep only the 1st username in a comma-separated list
+                        export username=`echo -n $OPTARG | sed '/,.*$/s///g'`
 			export ALLGROUPS=0
 			echo " - Print only user $OPTARG"
 			;;
@@ -78,25 +85,38 @@ while getopts "p:u:g:s:e:r:m:W:cywGCTNhn" options; do
 			echo " - Print only users in UNIX group $OPTARG"
 			;;
 		G )     export ALLGROUPS=1
-			export reportby="groups"
+			export reportby="GROUPS"
 			export username=""
 			export groupname=""
 			SORTCOLUMN=4
 			echo " - Print only groupwise summed accounting data"
 			;;
+		P )     export ALLGROUPS=1
+			export PARENTGROUPS=1
+			if [[ ! -f $PARENTFILE ]]
+			then
+				echo "ERROR: Parent group file $PARENTFILE not found"
+				exit -1
+			fi
+			export reportby="PARENT GROUPS"
+			export username=""
+			export groupname=""
+			SORTCOLUMN=4
+			echo " - Print only Parent group summed accounting data"
+			;;
 		C )     export CPUUSAGE=1	# CPU accounting: The default option
 			export TRES="cpus"
-			SORTCOLUMN=5
+			SORTCOLUMN=4
 			echo " - Print CPU usage"
 			;;
 		N )     export NODEUSAGE=1	# NODE accounting
 			export TRES="node"
-			SORTCOLUMN=5
+			SORTCOLUMN=4
 			echo " - Print NODE usage"
 			;;
 		T )     export TRESGPU=1	# TRES GPU accounting
 			export TRES="gpus"
-			SORTCOLUMN=5
+			SORTCOLUMN=4
 			echo " - Print Trackable resource (TRES) GPU usage"
 			;;
 		s )     export start_time=$OPTARG
@@ -121,8 +141,14 @@ while getopts "p:u:g:s:e:r:m:W:cywGCTNhn" options; do
 			;;
 		y )     export start_time=`date +0101%y`
 			export end_time=`date +%m%d%y`
-			echo " - Select current year from $start_time until $end_time"
+			echo " - Select CURRENT YEAR from $start_time until $end_time"
 			REPORT_NAME=Current_year
+			;;
+		Y )     selectyear="$OPTARG"
+			export start_time=`date -d "01 jan $selectyear" +0101%y`
+			export end_time=`date -d "01 jan $selectyear next year" +0101%y`
+			echo " - Select the YEAR $selectyear from $start_time until $end_time"
+			REPORT_NAME=${start_time}_${end_time}
 			;;
 		w )     export start_time=`date -d 'last week' +%m%d%y`
 			export end_time=`date +%m%d%y`
@@ -192,11 +218,9 @@ then
 	for p in `echo $partition | sed 's/,/ /g'`
 	do
 		# echo "Check partition $p"
-	if [[ "`sinfo -h -p $p -O PartitionName`" == "" ]]
-	then
-			echo "WARNING: Invalid partition name $p"
-			# echo "Valid partition names are:"
-			# sinfo -O "PartitionName"
+		if [[ "`sinfo -h -p $p -O PartitionName`" == "" ]]
+		then
+			echo "Notice: Unknown partition name: $p"
 		fi
 	done
 fi
@@ -269,41 +293,40 @@ fi
 
 if [[ $ALLGROUPS -eq 0 ]]
 then
+	# -------------------------
 	# User statistics
+	# -------------------------
 	if [[ "$workdir" != "" ]]
 	then
 		echo " - Print only accounting data for jobs with working directory $workdir" >> $REPORT
 	fi
 	echo >> $REPORT
 	echo "Usage sorted by top users:" >> $REPORT
-	# echo "Jobs completed/terminated between date/time $start_time and $end_time"
 	if [[ "$groupname" != "" ]]
 	then
 		echo "Group name selected: $groupname" >> $REPORT
 		selection="--group $groupname $selection"
 	fi
-	# echo "                             Wallclock          Average Average" >> $REPORT
-	# echo "Username    Group    #jobs       hours  Percent  #cpus  q-hours  Full name" >> $REPORT
-	# echo "--------    -----  ------- -----------  ------- ------- -------  ---------" >> $REPORT
 	cat <<EOF >> $REPORT
-                             Wallclock           Energy Average Average
-Username    Group    #jobs   $TRES-hrs   Percent    kWh   #$TRES  q-hours    Full name
---------    -----  ------- -----------  ------- ------- ------- -------  ---------
+                                         Wallclock           Energy Average Average
+Username        Group(parent)    #jobs   $TRES-hrs   Percent    kWh   #$TRES  q-hours    Full name
+--------        -------------  ------- -----------  ------- ------- ------- -------  ---------
 EOF
 else
+	# -------------------------
 	# Group statistics
-	echo >> $REPORT
+	# -------------------------
 	if [[ "$workdir" != "" ]]
 	then
 		echo " - Print only accounting data for jobs with working directory $workdir" >> $REPORT
 		echo >> $REPORT
 	fi
+	echo >> $REPORT
 	echo "Usage sorted by top groups:" >> $REPORT
-	# echo "Jobs completed/terminated between date/time $start_time and $end_time"
 	cat <<EOF >> $REPORT
-                      Wallclock           Energy  Average Average
-     Group    #jobs   $TRES-hrs   Percent     kWh  #$TRES   q-hours
-     -----  ------- -----------  ------- -------  ------- -------
+                                Wallclock           Energy  Average Average
+       Group(parent)    #jobs   $TRES-hrs   Percent     kWh  #$TRES   q-hours
+       -------------  ------- -----------  ------- -------  ------- -------
 EOF
 fi
 
@@ -334,6 +357,8 @@ BEGIN {
 	userselect=ENVIRON["username"]
 	groupselect=ENVIRON["groupname"]
 	ALLGROUPS=ENVIRON["ALLGROUPS"]
+	PARENTGROUPS=ENVIRON["PARENTGROUPS"]
+	PARENTFILE=ENVIRON["PARENTFILE"]
 	CPUUSAGE=ENVIRON["CPUUSAGE"]
 	NODEUSAGE=ENVIRON["NODEUSAGE"]
 	TRESGPU=ENVIRON["TRESGPU"]
@@ -341,7 +366,7 @@ BEGIN {
 	totaljobs=0
 	giga=1000000000
 	# Maximum possible node power (Watt)
-	maxpower = 15000
+	maxpower = 20000
 	kWh=3600000	# 1 kilo-Watt-hour (kWh) is this many Joules
 	# First get the list of user full names from /etc/passwd lines
 	COMMAND="getent passwd"
@@ -351,21 +376,31 @@ BEGIN {
 		# print b[1], fullname[b[1]]
 	}
 	close(COMMAND)
+	# Read parent accounts from PARENTFILE (/etc/slurm/accounts.conf)
+	COMMAND="cat " PARENTFILE
+	while (COMMAND | getline ) {
+		n = split($0,b,":")	# Split PARENTFILE line into fields
+		if (n >= 2) parentgroup[b[1]] = b[2]	
+	}
 }
 {
 	# Parse input data and make sanity checks
 	JobID	= $1		# JobID
 	user	= $2		# User name
 	group	= $3		# Group name
+	if (PARENTGROUPS == 1)
+		group = parentgroup[$3]	# Use Parent groups in stead of groups
 	part	= $4		# Slurm partition name for this job
 	allocnodes = $5		# Number of nodes allocated
 	alloccpus = $6		# Total number of CPUs allocated (>= allocnodes)
 	alloctres = $7		# TRES resources (GPUs etc.) allocated
-	# Usage of resources: cpus or nodes
+	# Usage of resources: cpus or nodes (TRES/GPU is below)
 	if (CPUUSAGE == 1)
 		usage = alloccpus
-	else
+	else if (NODEUSAGE == 1)
 		usage = allocnodes
+	else
+		usage = 0
 	submit	= $8		# submit time
 	eligible= $9		# eligible time
 	if (eligible == "Unknown") eligible = submit
@@ -386,34 +421,34 @@ BEGIN {
 	#   AllocTRES requires AccountingStorageTRES=gres/gpu in slurm.conf
 	#   Parse the alloctres field and look for gres/gpu=XX number of gpus field
 	#     Example: billing=4,cpu=2,gres/gpu:rtx3090=1,gres/gpu=1,mem=4000M,node=1
-	ngpus = 0	# Number of GPUs allocated
+	ngpus = 0	# The number of GPUs allocated
 	if (TRESGPU > 0 && alloctres != "" && split(alloctres, array, ",") > 0) {
 		for (i in array) {
 			if (gsub("gres/gpu=", "", array[i]) == 1)
 				ngpus = array[i]
 		}
 		delete array
-		if (ngpus == 0) next	# Skip non_GPU jobs
+		if (ngpus == 0) next	# Skip jobs that used zero GPUs
+		# When TRESGPU > 0 we set "usage" to "ngpus" (the number of GPUs used)
+		# in stead of cpus or nodes:
+		usage = ngpus
 	}
 
 	# Total energy consumed by a job, in joules. 
 	# BEWARE: If multiple jobs share a node, we cannot assign an energy to each individual job but only the total energy!
-	# Therefore the energy usage may be counted multiple times.
+	# Therefore the energy usage may be accounted for multiple times!
 	joules	= $15
 	# Incorrect astronomically large joules numbers may occur, see https://support.schedmd.com/show_bug.cgi?id=20207
 	# The acct_gather_energy/ipmi issues were fixed in Slurm 24.11
 	if (joules == "" || joules > 10*giga) joules = 0
-	# Check sanity of power (joules/elapsed) must be less than maxpower Watts
-	power = joules / elapsed
-	if (power > maxpower) joules = 0
+	# Check sanity of joules: Must be less than elapsed*maxpower Watts
+	if (joules > elapsed * maxpower) joules = 0
 	jobworkdir	= $16	# Job working directory
 
 	# Cluster TOTAL accounting
 	totaljobs++
 	totalwait += wait
-	# totalusage += usage*elapsed
 	wallusagetotal += usage*wall
-	wallgputotal += ngpus*wall
 	wallsecs += wall
 
 	# Check if this job matches selection criteria
@@ -427,7 +462,6 @@ BEGIN {
 	usergroup[user,group] = group
 	jobs[user,group]++
 	wallusagesum[user,group] += usage*wall
-	wallgpusum[user,group] += ngpus*wall
 	walltimesum[user,group] += wall
 	joulesused[user,group] += joules
 	waittime[user,group] += wait
@@ -436,7 +470,6 @@ BEGIN {
 	groupname[group]=group
 	group_jobs[group]++
 	group_wallusagesum[group] += usage*wall
-	group_wallgpusum[group] += ngpus*wall
 	group_walltimesum[group] += wall
 	group_waittime[group] += wait
 	groupjoulesused[group] += joules
@@ -449,42 +482,34 @@ BEGIN {
 		totalwaitaverage = 0
 	if (wallsecs > 0) {
 		wallusageaverage = wallusagetotal/wallsecs
-		gpuaverage = wallgputotal/wallsecs
 	} else {
 		wallusageaverage = 0
-		gpuaverage = 0
 	}
 	# Usage in hours
-	# totalusagehours = totalusage / 3600
 	wallusagehours = wallusagetotal / 3600
-	wallgpuhours = wallgputotal / 3600
 	wallhours = wallsecs / 3600
 
 	if (ALLGROUPS == 0) {
+		#
 		# Per-user accounting
 		# -------------------
-		format = "%8.8s %8.8s %8d  %10.1f  %7.2f %7.0f %7.2f %7.2f  %s\n"
+		format = "%8.8s %20.20s %8d  %10.1f  %7.2f %7.0f %7.2f %7.2f  %s\n"
 		groupjobs = 0
 		grouphours = 0
 		groupjoules = 0
 		for (ug in usernamegroup) {
 			if (length(groupselect) > 0 && usergroup[ug] != groupselect) continue
 			if (wallusagetotal > 0 && jobs[ug] > 0 && walltimesum[ug] > 0)
-				# CPU/NODE or GPU accounting
-				if (TRESGPU == 0) {
-					w1 = wallusagesum[ug]
-					w2 = wallusagetotal
-				} else {
-					w1 = wallgpusum[ug]
-					w2 = wallgputotal
-					if (w1 == 0) continue	# Zero GPU usage
-				}
-				printf(format, usernamegroup[ug], usergroup[ug],
+				w1 = wallusagesum[ug]
+				w2 = wallusagetotal
+				group = usergroup[ug]
+				parent = parentgroup[group]	# Parent account
+				group = group "(" parent ")"	# Append (parent)
+				printf(format, usernamegroup[ug], group,
 					jobs[ug], w1/3600, 100*w1/w2, joulesused[ug]/kWh,
 					w1/walltimesum[ug], waittime[ug]/jobs[ug]/3600, fullnamegroup[ug])
 			groupjobs += jobs[ug]
 			groupusagehours += wallusagesum[ug]/3600
-			groupgpuhours += wallgpusum[ug]/3600
 			grouphours += walltimesum[ug]/3600
 			groupwait += waittime[ug]
 			groupjoules += groupjoulesused[ug]
@@ -492,16 +517,9 @@ BEGIN {
 		}
 		# Print out total usage
 		totalusers = "Number of users: " usercount
-		# CPU/NODE or GPU accounting
-		if (TRESGPU == 0) {
-			avg = wallusageaverage
-			wtot = wallusagehours
-			g = groupusagehours
-		} else {
-			avg = gpuaverage
-			wtot = wallgpuhours
-			g = groupgpuhours
-		}
+		avg = wallusageaverage
+		wtot = wallusagehours
+		g = groupusagehours
 		printf(format, "TOTAL", "(All)", totaljobs, wtot, 100, totaljoules/kWh,
 			avg, totalwaitaverage/3600, totalusers)
 		# Print out group usage
@@ -510,36 +528,27 @@ BEGIN {
 				100*g/wtot, groupjoules/kWh,
 				g/grouphours, groupwait/groupjobs/3600, "")
 	} else {
+		#
 		# Per-group accounting
 		# --------------------
-		format = "%10s %8d  %10.1f  %7.2f %7.0f  %7.2f %7.2f\n"
+		format = "%20s %8d  %10.1f  %7.2f %7.0f  %7.2f %7.2f\n"
 		# Sort arrays by element values:
 		# https://www.gnu.org/software/gawk/manual/html_node/Controlling-Scanning.html
 		PROCINFO["sorted_in"] = "@ind_num_desc"
 
 		for (group in groupname) {
-			# CPU or GPU accounting
-			if (TRESGPU == 0) {
-				w1 = group_wallusagesum[group]
-				w2 = wallusagetotal
-			} else {
-				w1 = group_wallgpusum[group]
-				w2 = wallgputotal
-				if (w1 == 0) continue	# Zero GPU usage
-			}
+			grname = groupname[group]
+			grandparent = parentgroup[group]	# Grandparent account
+			grname = grname "(" grandparent ")"	# Append (grandparent)
+			w1 = group_wallusagesum[group]
+			w2 = wallusagetotal
 			if (group_jobs[group] > 0 && group_walltimesum[group] > 0)
-				printf(format, groupname[group],
+				printf(format, grname,
 					group_jobs[group], w1/3600, 100*w1/w2, groupjoulesused[group]/kWh,
 					w1/group_walltimesum[group], group_waittime[group]/group_jobs[group]/3600)
 		}
-		# CPU or GPU accounting
-		if (TRESGPU == 0) {
-			avg = wallusageaverage
-			wtot = wallusagehours
-		} else {
-			avg = gpuaverage
-			wtot = wallgpuhours
-		}
+		avg = wallusageaverage
+		wtot = wallusagehours
 		printf(format, "TOTAL", totaljobs, wtot, 100, totaljoules/kWh, avg, totalwaitaverage/3600)
 	}
 } ' | env LC_ALL=C sort -r -n -k $SORTCOLUMN -k 3 -k 1d >> $REPORT

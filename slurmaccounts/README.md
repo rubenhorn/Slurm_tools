@@ -247,10 +247,49 @@ Usage:
 slurmusertable [username(s)]
 ```
 
-
 showrecentusers tool
 --------------------
 
-This tool prints Slurm user settings that may need to be updated:
-Selects users that were added in the last $newuserperiod".
-It uses the ```slurmusersettings``` tool.
+The ```showrecentusers``` tool prints Slurm user settings that may need to be updated:
+Selects users that were added in the last ```newuserperiod``` days.
+
+This tool uses the ```slurmusersettings``` tool to suggest updates to account settings .
+
+showdeletedusers tool
+-----------------------
+
+This tool ```showdeletedusers``` prints Slurm users which have been deleted from the passwd database
+or have an expired account in the system shadow database.
+
+The Slurm administrator may decide to delete the deleted/expired Slurm users.
+
+showusertres tool
+-----------------------
+
+Show user GrpTRES values, optionally only if greater than some values
+
+```
+Usage: showusertres [-c num_cpus] [-g num_gpus] [-n num_nodes] | [-u username] | [-h]
+where:
+	-c: Print only if num_cpus > this value
+	-g: Print only if num_gpus > this value
+	-n: Print only if num_nodes > this value
+	-u: Print only this username (-c,-g,-n are ignored)
+	-h: Print help information
+```
+
+updateuserlimits tool
+-----------------------
+
+Update user limits temporarily, for example increasing limits during weekends.
+Currently we only multiply CPU limits by 1.5.
+Requires these commands from the present project: ```showjobreasons showuserlimits slurmusersettings```.
+
+Use the option ```-r``` to reset limits to the user defaults.
+
+```
+Usage: updateuserlimits [-r | -h] [list of usernames separated by spaces]
+where:
+        -r Reset the limits to defaults
+        -h Print help information
+```
