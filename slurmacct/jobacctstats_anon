@@ -22,10 +22,10 @@ def generate_dataset(month: str, partition: str, output: str) -> None:
     report_path = run_jobacctstats(month, partition)
 
     df = pd.read_csv(report_path, sep="\t", index_col=False)
-    # Normalize timestamps to first job submission
-    first_submit = df["Submit"].min()
-    df["Submit"] -= first_submit
-    df["Started"] -= first_submit
+    ## Normalize timestamps to first job submission
+    #first_submit = df["Submit"].min()
+    #df["Submit"] -= first_submit
+    #df["Started"] -= first_submit
     df.sort_values("Submit", inplace=True)
     users = list(df["user"].unique())
     df["user"] = df["user"].apply(lambda u: users.index(u))
