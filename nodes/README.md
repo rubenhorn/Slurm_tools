@@ -1,32 +1,49 @@
 Slurm node scripts
 ------------------
 
-Some convenient scripts for working with nodes (or lists of nodes):
+Some convenient scripts for working with (lists of) nodes:
 
-* Show status, jobs, events, reservations for a list of nodes: ```shownode <node-list>```.
+* Show status, jobs, events, reservations for a list of nodes: [shownode](shownode).
+
   **Recommended** as an easy way to print all relevant information about a node-list.
-* Drain a node-list: ```sdrain node-list "Reason"```.
-* Resume a node-list: ```sresume node-list```.
-* Reboot and resume a node-list: ```sreboot node-list```.
-* Reserve nodes when they become idle: ```reserve_on_idle [-s|--single-reservation] [-k|--keep-reservation] [-d|--duration DURATION] "<node-list>"```.
-* Show node status: ```shownode <node-list>```.
-* Power up/down a node-list: ```spowerup node-list``` and ```spowerdown node-list```.
-  Note: This only works with nodes in Slurm power saving, NOT nodes in state DOWN, DRAIN etc.
-* Show node events in Slurm database: ```showevents < -w <node-list> | -p partition | -a | -h > [ -t time_period ]```.
-* Show node power values: ```showpower < -w node-list | -p partition(s) | -a | -h > [ -S sorting-variable ] -s```.
-* Check dead nodes with a ping: ```alive``` (may be run from crontab every 10 minutes)
-* Check node BMCs with a ping: ```alive_bmc``` (may be run from crontab regularly)
-* Show Nvidia GPU power values: ```showpower_nvidia < -w node-list | -p partition(s) | -a | -h > -s```
-* Do a ```ps``` process status on a node-list, but exclude system processes: ```psnode [-c columns | -h] node-list```.
-* Print Slurm version on a node-list: ```sversion node-list```. Requires [ClusterShell](https://wiki.fysik.dtu.dk/niflheim/SLURM#clustershell).
-* Check consistency of /etc/slurm/topology.conf with node-list in /etc/slurm/slurm.conf: ```checktopology```
-* Compute node OS and firmware updates using the ```update.sh``` script.
+
+* Show node ```BootTime, State```, etc.: [shownodetimes](shownodetimes).
+
+* Drain a node-list: [sdrain](sdrain).
+
+* Resume a node-list: [sresume](sresume).
+
+* Reboot and resume a node-list: [sreboot](sreboot).
+
+* Reserve nodes when they become idle: [reserve_on_idle](reserve_on_idle).
+
+* Power up/down a node-list: [spowerup](spowerup) and [spowerdown](spowerdown).
+
+* Show node events in the Slurm database: [showevents](showevents).
+
+* Show node power values: [showpower](showpower).
+
+* Check dead nodes with a ping: [alive](alive) (may be run from crontab every 10 minutes)
+
+* Check node BMCs with a ping: [alive_bmc](alive_bmc) (may be run from crontab regularly)
+
+* Show Nvidia GPU power values: [showpower_nvidia](showpower_nvidia).
+
+* Do a ```ps``` (process status) on a node-list, but exclude system processes: [psnode](psnode).
+
+* Print Slurm version on a node-list: [sversion](sversion).
+
+* Check consistency of ```/etc/slurm/topology.conf``` with node-list in ```/etc/slurm/slurm.conf```: [checktopology](checktopology).
+
+* Compute node OS and firmware updates [update_down_node.sh](update_down_node.sh).
+
+The scripts contain documentation of their usage. 
 
 Usage
 -----
 
-Copy these scripts to /usr/local/bin/.
-If necessary configure the variables in the script.
+Copy these scripts to ```/usr/local/bin/```.
+If necessary configure any recommended variables in the script.
 
 Example output from ```psnode```:
 
@@ -136,12 +153,11 @@ If you have configured [Slurm power saving](https://slurm.schedmd.com/power_save
 there may be powered-off nodes with ```State=powered_down``` which need to be updated,
 identify such nodes with ```sinfo -t powered_down```.
 However, the ```scontrol reboot``` command will skip such nodes.
-The solution is to request Slurm to power up the nodes:
+The solution is to request Slurm to power up the nodes followed immediately by a reboot:
 ```
 scontrol power up <node-list>
+scontrol reboot asap nextstate=down <node-list>
 ```
-followed by the above ```scontrol reboot``` command,
-causing the nodes to power up and then reboot immediately.
 
 ### Optional for mixed state nodes
 
